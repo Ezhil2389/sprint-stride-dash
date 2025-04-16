@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -8,6 +7,7 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  FileText,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { projectsApi, usersApi } from "@/services/api";
@@ -37,6 +37,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardFooter,
 } from "@/components/ui/card";
 import {
   Pagination,
@@ -73,12 +74,10 @@ const Projects = () => {
     queryFn: usersApi.getEmployees,
   });
 
-  // Filter projects based on employee role
   const baseProjects = isManager
     ? allProjects
     : allProjects.filter((project) => project.assignedTo?.id === user?.id);
 
-  // Apply search
   let filteredProjects = baseProjects.filter((project) => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -90,7 +89,6 @@ const Projects = () => {
     return true;
   });
 
-  // Apply filters
   if (filters.status.length > 0) {
     filteredProjects = filteredProjects.filter((project) =>
       filters.status.includes(project.status)
@@ -109,7 +107,6 @@ const Projects = () => {
     );
   }
 
-  // Apply sorting
   const sortedProjects = [...filteredProjects].sort((a, b) => {
     switch (sortBy) {
       case "newest":
@@ -125,7 +122,6 @@ const Projects = () => {
     }
   });
 
-  // Calculate pagination
   const totalPages = Math.ceil(sortedProjects.length / projectsPerPage);
   const startIndex = (currentPage - 1) * projectsPerPage;
   const paginatedProjects = sortedProjects.slice(
@@ -391,8 +387,6 @@ const Projects = () => {
                 {[...Array(totalPages)].map((_, i) => {
                   const page = i + 1;
                   
-                  // Always show first, last, and current page
-                  // For others, show if they're within 1 of current page
                   if (
                     page === 1 ||
                     page === totalPages ||
@@ -410,7 +404,6 @@ const Projects = () => {
                     );
                   }
                   
-                  // Show ellipses if there's a gap
                   if (
                     (page === 2 && currentPage > 3) ||
                     (page === totalPages - 1 && currentPage < totalPages - 2)

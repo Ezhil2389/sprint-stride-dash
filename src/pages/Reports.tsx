@@ -1,10 +1,9 @@
-
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart as BarChartIcon,
   Calendar,
-  FileBar,
+  FileText,
   LineChart as LineChartIcon,
   PieChart as PieChartIcon,
 } from "lucide-react";
@@ -207,7 +206,7 @@ const Reports = () => {
               <CardTitle className="text-base">Total Projects</CardTitle>
               <CardDescription>All projects in system</CardDescription>
             </div>
-            <FileBar className="h-4 w-4 text-muted-foreground" />
+            <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{getTotalProjectCount()}</div>
