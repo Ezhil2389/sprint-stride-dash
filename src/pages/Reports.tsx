@@ -34,7 +34,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Define chart colors
 const STATUS_COLORS = ["#9e9e9e", "#2196f3", "#4caf50"];
 const PRIORITY_COLORS = ["#4caf50", "#ff9800", "#f44336", "#9c27b0"];
 const CHART_COLORS = ["#5c6ac4", "#2196f3", "#4caf50", "#ff9800", "#f44336", "#9c27b0"];
@@ -50,7 +49,6 @@ const Reports = () => {
     queryFn: usersApi.getEmployees,
   });
 
-  // Calculate project status distribution
   const statusData = useMemo(() => {
     const counts = {
       [ProjectStatus.NOT_STARTED]: 0,
@@ -69,7 +67,6 @@ const Reports = () => {
     ];
   }, [projects]);
 
-  // Calculate project priority distribution
   const priorityData = useMemo(() => {
     const counts = {
       [PriorityLevel.LOW]: 0,
@@ -90,7 +87,6 @@ const Reports = () => {
     ];
   }, [projects]);
 
-  // Calculate employee workload
   const workloadData = useMemo(() => {
     if (!employees.length) return [];
 
@@ -117,7 +113,6 @@ const Reports = () => {
     return employeeProjects.sort((a, b) => b.total - a.total);
   }, [employees, projects]);
 
-  // Calculate monthly completion data (simulated)
   const monthlyData = useMemo(() => {
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
     const completionData = [
@@ -132,7 +127,6 @@ const Reports = () => {
     return completionData;
   }, []);
 
-  // Calculate completion rate over time (simulated)
   const weeklyCompletionRate = useMemo(() => {
     const getWeekNumber = (d: Date) => {
       d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -141,7 +135,6 @@ const Reports = () => {
       return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
     };
     
-    // Generate weekly data for the last 10 weeks
     const weeks = [];
     const currentDate = new Date();
     for (let i = 9; i >= 0; i--) {
@@ -150,7 +143,6 @@ const Reports = () => {
       const weekNumber = getWeekNumber(weekDate);
       const weekLabel = `W${weekNumber}`;
       
-      // Simulated data
       const completionRate = Math.floor(Math.random() * 30) + 70;
       
       weeks.push({
