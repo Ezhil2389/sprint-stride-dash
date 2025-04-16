@@ -1,13 +1,23 @@
 
 import { defineConfig } from "vite";
-import { getPlugins } from "./src/config/vite/plugins";
-import { serverConfig } from "./src/config/vite/server";
-import { aliasConfig } from "./src/config/vite/aliases";
+import react from "@vitejs/plugin-react-swc";
+import path from "path";
+import { componentTagger } from "lovable-tagger";
 
+// https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  server: serverConfig,
-  plugins: getPlugins(mode),
+  server: {
+    host: "::",
+    port: 3000,
+  },
+  plugins: [
+    react(),
+    mode === 'development' &&
+    componentTagger(),
+  ].filter(Boolean),
   resolve: {
-    alias: aliasConfig,
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
   },
 }));
