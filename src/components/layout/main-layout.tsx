@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, LogOut, User } from 'lucide-react';
@@ -24,15 +23,16 @@ interface MainLayoutProps {
 export const MainLayout = ({ children }: MainLayoutProps) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { user, logout } = useAuth();
+  const { user, currentUser, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
   const getInitials = (name: string) => {
+    if (!name) return 'U';
     return name
       .split(' ')
       .map(part => part[0])
@@ -40,6 +40,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       .toUpperCase()
       .substring(0, 2);
   };
+
+  // Get the display name from user data
+  const displayName = currentUser 
+    ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() || currentUser.username
+    : user?.username || 'User';
 
   return (
     <div className="relative min-h-screen bg-background">
@@ -76,16 +81,17 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
                   className="relative h-9 w-9 rounded-full bg-muted p-0"
                 >
                   <Avatar className="h-9 w-9">
-                    <AvatarImage src={user?.avatar} alt={user?.name} />
-                    <AvatarFallback>{user?.name ? getInitials(user.name) : 'U'}</AvatarFallback>
+                    <AvatarImage src={currentUser?.avatar} alt={displayName} />
+                    <AvatarFallback>{getInitials(displayName)}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{user?.name}</p>
+                    <p className="text-sm font-medium">{displayName}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{user?.role.toLowerCase()}</p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />

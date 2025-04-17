@@ -1,77 +1,125 @@
-
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "./status-badge";
 import { PriorityBadge } from "./priority-badge";
-import { Project } from "@/types";
+import { Project, ProjectStatus } from "@/types";
 import { format } from "date-fns";
+import { Clock, CheckCircle, PlayCircle } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface ProjectCardProps {
   project: Project;
+  onUpdateStatus: (projectId: number, status: ProjectStatus) => void;
+  // isLoading?: boolean; 
 }
 
-export const ProjectCard = ({ project }: ProjectCardProps) => {
+export const ProjectCard = ({ project, onUpdateStatus /*, isLoading */ }: ProjectCardProps) => {
   const navigate = useNavigate();
-  
-  const getInitials = (name?: string) => {
-    if (!name) return "?";
-    return name
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .toUpperCase()
-      .substring(0, 2);
+
+  const handleStatusChange = (event: React.MouseEvent, newStatus: ProjectStatus) => {
+    event.stopPropagation();
+    if (project.status === newStatus /* || isLoading */) {
+      return;
+    }
+    onUpdateStatus(project.id, newStatus);
+  };
+
+  const handleCardClick = () => {
+    navigate(`/projects/${project.id}`);
   };
   
   return (
-    <Card className="overflow-hidden hover:shadow-md transition-shadow">
-      <CardHeader className="pb-2">
-        <div className="flex justify-between">
-          <CardTitle className="truncate text-base">{project.name}</CardTitle>
-        </div>
-      </CardHeader>
-      <CardContent className="pb-2">
-        <p className="text-sm text-muted-foreground line-clamp-2 h-10">
-          {project.description}
-        </p>
-        <div className="flex items-center justify-between mt-3">
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">Due Date</p>
-            <p className="text-sm">{format(new Date(project.endDate), "MMM d, yyyy")}</p>
+    <TooltipProvider>
+      <Card 
+        className="overflow-hidden hover:shadow-lg transition-shadow flex flex-col h-full cursor-pointer group" 
+        onClick={handleCardClick}
+      >
+        <CardHeader className="pb-2 relative">
+          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+             <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={project.status === ProjectStatus.NOT_STARTED ? "default" : "ghost"}
+                  size="icon"
+                  onClick={(e) => handleStatusChange(e, ProjectStatus.NOT_STARTED)}
+                  // disabled={isLoading}
+                  className={cn(
+                    "h-7 w-7",
+                    project.status !== ProjectStatus.NOT_STARTED && "hover:bg-muted/80"
+                  )}
+                >
+                  <Clock className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Set to Not Started</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={project.status === ProjectStatus.IN_PROGRESS ? "default" : "ghost"}
+                  size="icon"
+                  onClick={(e) => handleStatusChange(e, ProjectStatus.IN_PROGRESS)}
+                  // disabled={isLoading}
+                  className={cn(
+                    "h-7 w-7",
+                    project.status !== ProjectStatus.IN_PROGRESS && "hover:bg-blue-100 hover:text-blue-700 dark:hover:bg-blue-900/80 dark:hover:text-blue-300"
+                  )}
+                >
+                  <PlayCircle className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Set to In Progress</p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={project.status === ProjectStatus.COMPLETED ? "default" : "ghost"}
+                  size="icon"
+                  onClick={(e) => handleStatusChange(e, ProjectStatus.COMPLETED)}
+                  // disabled={isLoading}
+                  className={cn(
+                    "h-7 w-7",
+                    project.status !== ProjectStatus.COMPLETED && "hover:bg-green-100 hover:text-green-700 dark:hover:bg-green-900/80 dark:hover:text-green-300"
+                  )}
+                >
+                  <CheckCircle className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Set to Completed</p>
+              </TooltipContent>
+            </Tooltip>
           </div>
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">Assigned To</p>
-            {project.assignedTo ? (
-              <div className="flex items-center gap-2">
-                <Avatar className="h-6 w-6">
-                  <AvatarImage src={project.assignedTo.avatar} />
-                  <AvatarFallback className="text-xs">
-                    {getInitials(project.assignedTo.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-sm">{project.assignedTo.name.split(" ")[0]}</span>
-              </div>
-            ) : (
-              <span className="text-sm text-muted-foreground">Unassigned</span>
-            )}
+          <CardTitle className="truncate text-base font-medium pr-20" title={project.name}>
+            {project.name}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4 flex-grow">
+          <p className="text-sm text-muted-foreground line-clamp-2 h-10 mb-3">
+            {project.description}
+          </p>
+          <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2">
+              <StatusBadge status={project.status} />
+              <PriorityBadge priority={project.priority} />
+            </div>
+            <span className="text-xs text-muted-foreground">Due: {format(new Date(project.endDate), "MMM d, yyyy")}</span>
           </div>
-        </div>
-      </CardContent>
-      <CardFooter className="flex justify-between pt-2">
-        <div className="flex gap-2">
-          <StatusBadge status={project.status} />
-          <PriorityBadge priority={project.priority} />
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navigate(`/projects/${project.id}`)}
-        >
-          View
-        </Button>
-      </CardFooter>
-    </Card>
+        </CardContent>
+      </Card>
+    </TooltipProvider>
   );
 };

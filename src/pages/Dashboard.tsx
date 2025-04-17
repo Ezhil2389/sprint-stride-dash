@@ -1,4 +1,3 @@
-
 import { useQuery } from "@tanstack/react-query";
 import {
   Calendar,
@@ -10,8 +9,7 @@ import {
 } from "lucide-react";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { projectsApi, usersApi } from "@/services/api";
-import { mockChartData } from "@/services/mockData";
-import { ProjectStatus } from "@/types";
+import { ProjectStatus, PriorityLevel } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { ProjectCard } from "@/components/projects/project-card";
 import {
@@ -34,65 +32,97 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
+import { countBy, groupBy } from 'lodash';
 
-const COLORS = ["#9e9e9e", "#2196f3", "#4caf50"];
-const PRIORITY_COLORS = ["#4caf50", "#ff9800", "#f44336", "#9c27b0"];
+const STATUS_COLORS: { [key in ProjectStatus]: string } = {
+  [ProjectStatus.NOT_STARTED]: "#9e9e9e",
+  [ProjectStatus.IN_PROGRESS]: "#2196f3",
+  [ProjectStatus.COMPLETED]: "#4caf50",
+};
+
+const PRIORITY_COLORS: { [key in PriorityLevel]: string } = {
+    [PriorityLevel.LOW]: "#4caf50",
+    [PriorityLevel.MEDIUM]: "#ff9800",
+    [PriorityLevel.HIGH]: "#f44336",
+    [PriorityLevel.URGENT]: "#9c27b0",
+};
 
 const Dashboard = () => {
-  const { user, isManager } = useAuth();
+  const { currentUser, isManager } = useAuth();
 
-  const { data: projects = [], isLoading: isLoadingProjects } = useQuery({
-    queryKey: ["projects"],
-    queryFn: projectsApi.getAll,
+  const { data: projectsResponse, isLoading: isLoadingProjects } = useQuery({
+    queryKey: ["allProjectsForDashboard"],
+    queryFn: () => projectsApi.getAll(0, 1000),
+    enabled: !!currentUser,
   });
 
-  const { data: employees = [], isLoading: isLoadingEmployees } = useQuery({
-    queryKey: ["employees"],
-    queryFn: usersApi.getEmployees,
+  const { data: userProjects, isLoading: isLoadingUserProjects } = useQuery({
+    queryKey: ["userProjectsForDashboard"],
+    queryFn: () => projectsApi.getUserProjects(0, 1000),
+    enabled: !!currentUser && !isManager,
   });
 
-  // Filter projects for employee view
-  const myProjects = projects.filter(
-    (project) => project.assignedTo?.id === user?.id
-  );
+  const { data: usersResponse, isLoading: isLoadingUsers } = useQuery({
+      queryKey: ["allUsersForDashboard"],
+      queryFn: () => usersApi.getAll(0, 1000),
+      enabled: !!currentUser && isManager,
+  });
 
-  // Calculate stats for manager dashboard
-  const totalProjects = projects.length;
-  const completedProjects = projects.filter(
+  const allProjects = projectsResponse?.content || [];
+  const myProjects = userProjects?.content || [];
+  const allUsers = usersResponse?.content || [];
+
+  const projectsToAnalyze = isManager ? allProjects : myProjects;
+
+  const totalProjects = projectsToAnalyze.length;
+  const completedProjects = projectsToAnalyze.filter(
     (p) => p.status === ProjectStatus.COMPLETED
   ).length;
-  const inProgressProjects = projects.filter(
+  const inProgressProjects = projectsToAnalyze.filter(
     (p) => p.status === ProjectStatus.IN_PROGRESS
   ).length;
-  const notStartedProjects = projects.filter(
+  const notStartedProjects = projectsToAnalyze.filter(
     (p) => p.status === ProjectStatus.NOT_STARTED
   ).length;
 
-  // Calculate stats for employee dashboard
-  const myTotalProjects = myProjects.length;
-  const myCompletedProjects = myProjects.filter(
-    (p) => p.status === ProjectStatus.COMPLETED
-  ).length;
-  const myInProgressProjects = myProjects.filter(
-    (p) => p.status === ProjectStatus.IN_PROGRESS
-  ).length;
-  const myNotStartedProjects = myProjects.filter(
-    (p) => p.status === ProjectStatus.NOT_STARTED
-  ).length;
+  const projectStatusCounts = countBy(projectsToAnalyze, 'status');
+  const projectStatusData = Object.entries(projectStatusCounts).map(([name, value]) => ({
+    name: name.replace('_', ' '),
+    value,
+  }));
 
-  const upcomingDeadlines = projects
+  const projectPriorityCounts = countBy(projectsToAnalyze, 'priority');
+  const projectPriorityData = Object.entries(projectPriorityCounts).map(([name, value]) => ({
+      name: name.charAt(0).toUpperCase() + name.slice(1).toLowerCase(),
+      value,
+  }));
+
+  const upcomingDeadlines = allProjects
     .filter(
-      (p) =>
-        new Date(p.endDate) > new Date() &&
-        new Date(p.endDate) <
-          new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) &&
-        p.status !== ProjectStatus.COMPLETED
+      (p) => {
+          try {
+              const endDate = new Date(p.endDate);
+              const now = new Date();
+              const sevenDaysLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+              return endDate > now && endDate < sevenDaysLater && p.status !== ProjectStatus.COMPLETED;
+          } catch(e) { return false; }
+      }
     )
     .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
 
   const myUpcomingDeadlines = upcomingDeadlines.filter(
-    (p) => p.assignedTo?.id === user?.id
+    (p) => p.assignedToId === currentUser?.id
   );
+
+  const isDashboardLoading = isLoadingProjects || (isLoadingUserProjects && !isManager) || (isLoadingUsers && isManager);
+
+  if (isDashboardLoading) {
+      return <div>Loading dashboard data...</div>
+  }
+
+  const handleDummyStatusUpdate = () => { 
+      console.log("Status update from dashboard card not implemented.");
+  };
 
   return (
     <div className="space-y-6">
@@ -100,7 +130,7 @@ const Dashboard = () => {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground">
-            Welcome back, {user?.name}!
+            Welcome back, {currentUser?.firstName || currentUser?.username}!
           </p>
         </div>
       </div>
@@ -126,7 +156,6 @@ const Dashboard = () => {
                 value={completedProjects}
                 icon={CheckCircle}
                 description="Successfully delivered"
-                trend={8}
               />
               <StatCard
                 title="In Progress"
@@ -155,7 +184,7 @@ const Dashboard = () => {
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={mockChartData.projectStatusCount}
+                          data={projectStatusData}
                           cx="50%"
                           cy="50%"
                           labelLine={false}
@@ -167,14 +196,15 @@ const Dashboard = () => {
                             `${name}: ${(percent * 100).toFixed(0)}%`
                           }
                         >
-                          {mockChartData.projectStatusCount.map((entry, index) => (
+                          {projectStatusData.map((entry) => (
                             <Cell
-                              key={`cell-${index}`}
-                              fill={COLORS[index % COLORS.length]}
+                              key={`cell-status-${entry.name}`}
+                              fill={STATUS_COLORS[entry.name.replace(' ', '_').toUpperCase() as ProjectStatus]}
                             />
                           ))}
                         </Pie>
                         <Tooltip />
+                        <Legend />
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
@@ -192,13 +222,11 @@ const Dashboard = () => {
                   <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
-                        width={500}
-                        height={300}
-                        data={mockChartData.projectPriorityCount}
+                        data={projectPriorityData}
                         margin={{
                           top: 5,
                           right: 30,
-                          left: 20,
+                          left: 0,
                           bottom: 5,
                         }}
                       >
@@ -207,10 +235,10 @@ const Dashboard = () => {
                         <Tooltip />
                         <Legend />
                         <Bar dataKey="value" name="Projects">
-                          {mockChartData.projectPriorityCount.map((entry, index) => (
+                          {projectPriorityData.map((entry) => (
                             <Cell
-                              key={`cell-${index}`}
-                              fill={PRIORITY_COLORS[index % PRIORITY_COLORS.length]}
+                              key={`cell-priority-${entry.name}`}
+                              fill={PRIORITY_COLORS[entry.name.toUpperCase() as PriorityLevel]}
                             />
                           ))}
                         </Bar>
@@ -232,15 +260,15 @@ const Dashboard = () => {
                 {upcomingDeadlines.length > 0 ? (
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {upcomingDeadlines.slice(0, 3).map((project) => (
-                      <ProjectCard key={project.id} project={project} />
+                      <ProjectCard key={project.id} project={project} onUpdateStatus={handleDummyStatusUpdate} />
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center py-8 text-center">
-                    <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-medium">No Upcoming Deadlines</h3>
+                  <div className="flex flex-col items-center justify-center p-6 text-center">
+                    <Calendar className="h-10 w-10 text-muted-foreground mb-2" />
+                    <p className="text-lg font-medium">No upcoming deadlines</p>
                     <p className="text-sm text-muted-foreground">
-                      There are no projects due within the next week.
+                      All projects are either completed or due after the next 7 days
                     </p>
                   </div>
                 )}
@@ -250,31 +278,155 @@ const Dashboard = () => {
 
           <TabsContent value="projects" className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {projects.slice(0, 6).map((project) => (
-                <ProjectCard key={project.id} project={project} />
-              ))}
+              {projectsToAnalyze.length > 0 ? (
+                projectsToAnalyze
+                  .slice(0, 6)
+                  .map((project) => (
+                    <ProjectCard key={project.id} project={project} onUpdateStatus={handleDummyStatusUpdate} />
+                  ))
+              ) : (
+                <div className="col-span-3 flex justify-center">
+                  <p>No projects found</p>
+                </div>
+              )}
             </div>
           </TabsContent>
 
           <TabsContent value="team" className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <StatCard
+                title="Team Members"
+                value={allUsers.length}
+                icon={PanelLeft}
+                description="Active team members"
+              />
+              <StatCard
+                title="Avg. Completion"
+                value="92%"
+                icon={CheckCircle}
+                description="Team efficiency"
+              />
+              <StatCard
+                title="Overdue Tasks"
+                value={3}
+                icon={FileWarning}
+                description="Requires attention"
+              />
+              <StatCard
+                title="Avg. Response"
+                value="2.5h"
+                icon={Clock}
+                description="Communication time"
+              />
+            </div>
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <div className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              title="My Projects"
+              value={totalProjects}
+              icon={PanelLeft}
+              description="Assigned to you"
+            />
+            <StatCard
+              title="Completed"
+              value={completedProjects}
+              icon={CheckCircle}
+              description="Successfully delivered"
+            />
+            <StatCard
+              title="In Progress"
+              value={inProgressProjects}
+              icon={PlayCircle}
+              description="Currently active"
+            />
+            <StatCard
+              title="Not Started"
+              value={notStartedProjects}
+              icon={Clock}
+              description="Waiting to begin"
+            />
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Upcoming Deadlines</CardTitle>
+              <CardDescription>Your projects due in the next 7 days</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {myUpcomingDeadlines.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {myUpcomingDeadlines.map((project) => (
+                    <ProjectCard key={project.id} project={project} onUpdateStatus={handleDummyStatusUpdate} />
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center p-6 text-center">
+                  <Calendar className="h-10 w-10 text-muted-foreground mb-2" />
+                  <p className="text-lg font-medium">No upcoming deadlines</p>
+                  <p className="text-sm text-muted-foreground">
+                    All your projects are either completed or due after the next 7
+                    days
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Team Workload</CardTitle>
-                <CardDescription>
-                  Projects assigned to each team member
-                </CardDescription>
+                <CardTitle>My Project Status</CardTitle>
+                <CardDescription>Overview of your project statuses</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={projectStatusData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                        nameKey="name"
+                        label={({ name, percent }) =>
+                          `${name}: ${(percent * 100).toFixed(0)}%`
+                        }
+                      >
+                        {projectStatusData.map((entry) => (
+                          <Cell
+                            key={`cell-status-${entry.name}`}
+                            fill={STATUS_COLORS[entry.name.replace(' ', '_').toUpperCase() as ProjectStatus]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Priority Distribution</CardTitle>
+                <CardDescription>Your projects by priority level</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
-                      width={500}
-                      height={300}
-                      data={mockChartData.employeeProjectLoad}
+                      data={projectPriorityData}
                       margin={{
                         top: 5,
                         right: 30,
-                        left: 20,
+                        left: 0,
                         bottom: 5,
                       }}
                     >
@@ -282,93 +434,20 @@ const Dashboard = () => {
                       <YAxis />
                       <Tooltip />
                       <Legend />
-                      <Bar dataKey="projects" fill="#5c6ac4" name="Assigned Projects" />
+                      <Bar dataKey="value" name="Projects">
+                        {projectPriorityData.map((entry) => (
+                          <Cell
+                            key={`cell-priority-${entry.name}`}
+                            fill={PRIORITY_COLORS[entry.name.toUpperCase() as PriorityLevel]}
+                          />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
-      ) : (
-        // Employee Dashboard
-        <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              title="My Projects"
-              value={myTotalProjects}
-              icon={PanelLeft}
-              description="Assigned to you"
-            />
-            <StatCard
-              title="Completed"
-              value={myCompletedProjects}
-              icon={CheckCircle}
-              description="Successfully delivered"
-            />
-            <StatCard
-              title="In Progress"
-              value={myInProgressProjects}
-              icon={PlayCircle}
-              description="Currently working on"
-            />
-            <StatCard
-              title="Not Started"
-              value={myNotStartedProjects}
-              icon={Clock}
-              description="Yet to begin"
-            />
           </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>My Projects</CardTitle>
-              <CardDescription>Projects assigned to you</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {myProjects.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {myProjects.map((project) => (
-                    <ProjectCard key={project.id} project={project} />
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <FileWarning className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium">No Projects Assigned</h3>
-                  <p className="text-sm text-muted-foreground">
-                    You currently don't have any projects assigned to you.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Upcoming Deadlines</CardTitle>
-              <CardDescription>
-                Your projects due in the next 7 days
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {myUpcomingDeadlines.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {myUpcomingDeadlines.map((project) => (
-                    <ProjectCard key={project.id} project={project} />
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium">No Upcoming Deadlines</h3>
-                  <p className="text-sm text-muted-foreground">
-                    You don't have any projects due within the next week.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
       )}
     </div>

@@ -1,15 +1,15 @@
-
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { MainLayout } from "@/components/layout/main-layout";
 import { UserRole } from "@/types";
+import { toast } from "sonner";
 
 interface ProtectedRouteProps {
   requiresManager?: boolean;
 }
 
 export const ProtectedRoute = ({ requiresManager = false }: ProtectedRouteProps) => {
-  const { isAuthenticated, user, isLoading } = useAuth();
+  const { isAuthenticated, currentUser, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -23,7 +23,8 @@ export const ProtectedRoute = ({ requiresManager = false }: ProtectedRouteProps)
     return <Navigate to="/login" replace />;
   }
 
-  if (requiresManager && user?.role !== UserRole.MANAGER) {
+  if (requiresManager && currentUser?.role !== UserRole.MANAGER) {
+    toast.error("Access Denied: Manager privileges required.");
     return <Navigate to="/dashboard" replace />;
   }
 

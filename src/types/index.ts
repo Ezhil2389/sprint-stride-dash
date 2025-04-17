@@ -1,4 +1,3 @@
-
 export enum UserRole {
   MANAGER = "MANAGER",
   EMPLOYEE = "EMPLOYEE"
@@ -18,28 +17,77 @@ export enum ProjectStatus {
 }
 
 export interface User {
-  id: string;
-  name: string;
+  id: number;
+  username: string;
   email: string;
+  firstName?: string;
+  lastName?: string;
   role: UserRole;
+  enabled: boolean;
   avatar?: string;
   department?: string;
   title?: string;
 }
 
 export interface Project {
-  id: string;
+  id: number;
   name: string;
   description: string;
   startDate: string;
   endDate: string;
-  assignedTo: User | null;
+  assignedToId: number;
+  assignedToName: string;
   priority: PriorityLevel;
   status: ProjectStatus;
-  createdAt: string;
-  updatedAt: string;
 }
 
-export interface AuthUser extends User {
+export interface AuthUser {
+  id: number;
+  username: string;
+  email: string;
+  role: string;
   token: string;
+  type: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  message: string;
+  data: T;
+}
+
+export interface UserRequest {
+  username: string;
+  password?: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  role?: UserRole;
+}
+
+export interface ProjectRequest {
+  name: string;
+  description: string;
+  startDate: string;
+  endDate: string;
+  assignedToId?: number;
+  priority: PriorityLevel;
+}
+
+export interface ProjectStatusRequest {
+  status: ProjectStatus;
+}
+
+export interface JwtResponse {
+  token: string;
+  type: string;
+  id: number;
+  username: string;
+  email: string;
+  role: string;
 }

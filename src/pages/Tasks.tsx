@@ -1,6 +1,5 @@
-
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck2, CheckCircle, Clock, Filter, Search } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { projectsApi } from "@/services/api";
@@ -23,30 +22,49 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Pagination } from "@/components/ui/pagination";
+import { toast } from "sonner";
 
 const Tasks = () => {
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<string>("deadline");
+  const [page, setPage] = useState(0);
+  const pageSize = 9;
+  const queryClient = useQueryClient();
 
-  const { data: projects = [], isLoading } = useQuery({
-    queryKey: ["projects"],
-    queryFn: projectsApi.getAll,
+  const { data: projectsData, isLoading, refetch } = useQuery({
+    queryKey: ["user-projects", page, pageSize],
+    queryFn: () => projectsApi.getUserProjects(page, pageSize),
   });
 
-  // Filter projects to only show those assigned to the current user
-  const myProjects = projects.filter(
-    (project) => project.assignedTo?.id === user?.id
-  );
+  // --- Mutations ---
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ projectId, status }: { projectId: number; status: ProjectStatus }) =>
+      projectsApi.updateStatus(projectId, status),
+    onSuccess: (updatedProject) => {
+      toast.success(`Project "${updatedProject.name}" status updated to ${updatedProject.status}`);
+      queryClient.invalidateQueries({ queryKey: ["user-projects"] });
+      refetch(); // Refetch to update the lists
+    },
+    onError: (error) => {
+      toast.error(`Failed to update project status: ${error.message}`);
+    },
+  });
+  // --- End Mutations ---
+
+  const projects = projectsData?.content || [];
+  const totalElements = projectsData?.totalElements || 0;
+  const totalPages = Math.ceil(totalElements / pageSize);
 
   // Group projects by status
-  const notStartedProjects = myProjects.filter(
+  const notStartedProjects = projects.filter(
     (project) => project.status === ProjectStatus.NOT_STARTED
   );
-  const inProgressProjects = myProjects.filter(
+  const inProgressProjects = projects.filter(
     (project) => project.status === ProjectStatus.IN_PROGRESS
   );
-  const completedProjects = myProjects.filter(
+  const completedProjects = projects.filter(
     (project) => project.status === ProjectStatus.COMPLETED
   );
 
@@ -92,6 +110,14 @@ const Tasks = () => {
   const filteredNotStarted = sortProjects(filterBySearch(notStartedProjects));
   const filteredInProgress = sortProjects(filterBySearch(inProgressProjects));
   const filteredCompleted = sortProjects(filterBySearch(completedProjects));
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleUpdateStatus = (projectId: number, status: ProjectStatus) => {
+    updateStatusMutation.mutate({ projectId, status });
+  };
 
   return (
     <div className="space-y-6">
@@ -154,7 +180,7 @@ const Tasks = () => {
                 </Card>
               ))}
             </div>
-          ) : myProjects.length > 0 ? (
+          ) : projects.length > 0 ? (
             <div className="space-y-6">
               {filteredNotStarted.length > 0 && (
                 <Card>
@@ -170,7 +196,7 @@ const Tasks = () => {
                   <CardContent>
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                       {filteredNotStarted.map((project) => (
-                        <ProjectCard key={project.id} project={project} />
+                        <ProjectCard key={project.id} project={project} onUpdateStatus={handleUpdateStatus} />
                       ))}
                     </div>
                   </CardContent>
@@ -189,7 +215,7 @@ const Tasks = () => {
                   <CardContent>
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                       {filteredInProgress.map((project) => (
-                        <ProjectCard key={project.id} project={project} />
+                        <ProjectCard key={project.id} project={project} onUpdateStatus={handleUpdateStatus} />
                       ))}
                     </div>
                   </CardContent>
@@ -210,7 +236,7 @@ const Tasks = () => {
                   <CardContent>
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                       {filteredCompleted.map((project) => (
-                        <ProjectCard key={project.id} project={project} />
+                        <ProjectCard key={project.id} project={project} onUpdateStatus={handleUpdateStatus} />
                       ))}
                     </div>
                   </CardContent>
@@ -251,13 +277,40 @@ const Tasks = () => {
               </CardContent>
             </Card>
           )}
+          
+          {!isLoading && totalPages > 1 && (
+            <div className="flex justify-center mt-6">
+              <Pagination
+                totalPages={totalPages}
+                currentPage={page}
+                onPageChange={handlePageChange}
+              />
+            </div>
+          )}
         </TabsContent>
 
-        <TabsContent value="not-started" className="space-y-4">
-          {filteredNotStarted.length > 0 ? (
+        <TabsContent value="not-started" className="space-y-6">
+          {isLoading ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[...Array(3)].map((_, i) => (
+                <Card key={i} className="overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <div className="h-4 w-3/4 bg-muted animate-pulse rounded" />
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="h-10 bg-muted animate-pulse rounded" />
+                    <div className="flex justify-between">
+                      <div className="h-4 w-1/3 bg-muted animate-pulse rounded" />
+                      <div className="h-4 w-1/3 bg-muted animate-pulse rounded" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : filteredNotStarted.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {filteredNotStarted.map((project) => (
-                <ProjectCard key={project.id} project={project} />
+                <ProjectCard key={project.id} project={project} onUpdateStatus={handleUpdateStatus} />
               ))}
             </div>
           ) : (
@@ -266,18 +319,35 @@ const Tasks = () => {
                 <Clock className="h-12 w-12 text-muted-foreground mb-4" />
                 <CardTitle className="text-xl mb-2">No tasks to start</CardTitle>
                 <CardDescription>
-                  You don't have any projects that need to be started
+                  You don't have any new projects waiting to be started
                 </CardDescription>
               </CardContent>
             </Card>
           )}
         </TabsContent>
 
-        <TabsContent value="in-progress" className="space-y-4">
-          {filteredInProgress.length > 0 ? (
+        <TabsContent value="in-progress" className="space-y-6">
+          {isLoading ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[...Array(3)].map((_, i) => (
+                <Card key={i} className="overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <div className="h-4 w-3/4 bg-muted animate-pulse rounded" />
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="h-10 bg-muted animate-pulse rounded" />
+                    <div className="flex justify-between">
+                      <div className="h-4 w-1/3 bg-muted animate-pulse rounded" />
+                      <div className="h-4 w-1/3 bg-muted animate-pulse rounded" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : filteredInProgress.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {filteredInProgress.map((project) => (
-                <ProjectCard key={project.id} project={project} />
+                <ProjectCard key={project.id} project={project} onUpdateStatus={handleUpdateStatus} />
               ))}
             </div>
           ) : (
@@ -286,18 +356,35 @@ const Tasks = () => {
                 <CalendarCheck2 className="h-12 w-12 text-muted-foreground mb-4" />
                 <CardTitle className="text-xl mb-2">No tasks in progress</CardTitle>
                 <CardDescription>
-                  You don't have any projects currently in progress
+                  You don't have any active projects at the moment
                 </CardDescription>
               </CardContent>
             </Card>
           )}
         </TabsContent>
 
-        <TabsContent value="completed" className="space-y-4">
-          {filteredCompleted.length > 0 ? (
+        <TabsContent value="completed" className="space-y-6">
+          {isLoading ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {[...Array(3)].map((_, i) => (
+                <Card key={i} className="overflow-hidden">
+                  <CardHeader className="pb-2">
+                    <div className="h-4 w-3/4 bg-muted animate-pulse rounded" />
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="h-10 bg-muted animate-pulse rounded" />
+                    <div className="flex justify-between">
+                      <div className="h-4 w-1/3 bg-muted animate-pulse rounded" />
+                      <div className="h-4 w-1/3 bg-muted animate-pulse rounded" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : filteredCompleted.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {filteredCompleted.map((project) => (
-                <ProjectCard key={project.id} project={project} />
+                <ProjectCard key={project.id} project={project} onUpdateStatus={handleUpdateStatus} />
               ))}
             </div>
           ) : (

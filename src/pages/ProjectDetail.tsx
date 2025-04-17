@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -50,10 +49,12 @@ import {
 } from "@/components/ui/select";
 
 const ProjectDetail = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id: idString } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { isManager, user } = useAuth();
+  const { isManager, currentUser } = useAuth();
   const queryClient = useQueryClient();
+
+  const id = idString ? parseInt(idString, 10) : undefined;
 
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [updatedStatus, setUpdatedStatus] = useState<ProjectStatus | undefined>(
@@ -63,7 +64,7 @@ const ProjectDetail = () => {
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
     queryFn: () => projectsApi.getById(id!),
-    enabled: !!id,
+    enabled: !!id && !isNaN(id),
   });
 
   const { data: employees } = useQuery({
@@ -77,7 +78,7 @@ const ProjectDetail = () => {
       projectId,
       status,
     }: {
-      projectId: string;
+      projectId: number;
       status: ProjectStatus;
     }) => projectsApi.updateStatus(projectId, status),
     onSuccess: () => {
@@ -93,7 +94,7 @@ const ProjectDetail = () => {
   });
 
   const deleteProjectMutation = useMutation({
-    mutationFn: (projectId: string) => projectsApi.delete(projectId),
+    mutationFn: (projectId: number) => projectsApi.delete(projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Project deleted successfully");
@@ -121,23 +122,25 @@ const ProjectDetail = () => {
   };
 
   // Check if the current user is assigned to this project
-  const isAssignedToUser = project?.assignedTo?.id === user?.id;
+  const isAssignedToUser = project?.assignedToId === currentUser?.id;
   const canUpdateStatus = isManager || isAssignedToUser;
 
   // Format dates
-  const formatDate = (dateString: string) => {
-    return format(new Date(dateString), "MMMM d, yyyy");
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return "N/A";
+    try {
+        return format(new Date(dateString), "MMMM d, yyyy");
+    } catch (e) {
+        console.error("Error formatting date:", e);
+        return dateString; // Return original string if formatting fails
+    }
   };
 
   // Create initials from name
-  const getInitials = (name?: string) => {
-    if (!name) return "?";
-    return name
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .toUpperCase()
-      .substring(0, 2);
+  const getInitials = (firstName?: string, lastName?: string) => {
+    const first = firstName?.[0] || "";
+    const last = lastName?.[0] || "";
+    return (first + last).toUpperCase() || "?";
   };
 
   if (isLoading) {
@@ -355,7 +358,7 @@ const ProjectDetail = () => {
                       alt={project.assignedTo.name}
                     />
                     <AvatarFallback>
-                      {getInitials(project.assignedTo.name)}
+                      {getInitials(project.assignedTo.firstName, project.assignedTo.lastName)}
                     </AvatarFallback>
                   </Avatar>
                   <div>

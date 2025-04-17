@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -36,7 +35,7 @@ export const SidebarNav = ({
       title: 'Dashboard',
       href: '/dashboard',
       icon: Home,
-      requiresManager: false,
+      requiresManager: true,
     },
     {
       title: 'Projects',
@@ -123,7 +122,12 @@ export const SidebarNav = ({
         <div className="flex-1 overflow-auto py-4">
           <nav className="grid gap-1 px-2">
             {navItems
-              .filter(item => !item.requiresManager || isManager)
+              .filter(item => {
+                if (item.href === '/projects') {
+                  return isManager;
+                }
+                return !item.requiresManager || isManager;
+              })
               .map((item) => (
                 <NavLink
                   key={item.href}

@@ -6,9 +6,10 @@ import {
   FileText,
   LineChart as LineChartIcon,
   PieChart as PieChartIcon,
+  Users,
 } from "lucide-react";
 import { projectsApi, usersApi } from "@/services/api";
-import { PriorityLevel, ProjectStatus } from "@/types";
+import { PriorityLevel, ProjectStatus, UserRole, Project } from "@/types";
 import { 
   Card, 
   CardContent, 
@@ -17,7 +18,7 @@ import {
   CardTitle 
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { format } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, getWeek, startOfWeek, endOfWeek, differenceInWeeks } from "date-fns";
 import {
   PieChart,
   Pie,
@@ -33,21 +34,35 @@ import {
   Line,
   ResponsiveContainer,
 } from "recharts";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 
 const STATUS_COLORS = ["#9e9e9e", "#2196f3", "#4caf50"];
 const PRIORITY_COLORS = ["#4caf50", "#ff9800", "#f44336", "#9c27b0"];
 const CHART_COLORS = ["#5c6ac4", "#2196f3", "#4caf50", "#ff9800", "#f44336", "#9c27b0"];
 
 const Reports = () => {
-  const { data: projects = [], isLoading: isLoadingProjects } = useQuery({
-    queryKey: ["projects"],
-    queryFn: projectsApi.getAll,
+  const { data: projectsData, isLoading: isLoadingProjects } = useQuery({
+    queryKey: ["projects", { page: 0, size: 1000 }],
+    queryFn: ({ queryKey }) => {
+        const [, params] = queryKey as [string, { page: number, size: number }];
+        return projectsApi.getAll(params.page, params.size);
+    },
+    placeholderData: { content: [], totalElements: 0 }
+  });
+  const projects: Project[] = projectsData?.content ?? [];
+
+  const { data: usersData, isLoading: isLoadingEmployees } = useQuery({
+    queryKey: ["users", { page: 0, size: 1000 }],
+    queryFn: ({ queryKey }) => {
+        const [, params] = queryKey as [string, { page: number, size: number }];
+        return usersApi.getAll(params.page, params.size);
+    },
+    placeholderData: { content: [], totalElements: 0, totalPages: 0 }
   });
 
-  const { data: employees = [], isLoading: isLoadingEmployees } = useQuery({
-    queryKey: ["employees"],
-    queryFn: usersApi.getEmployees,
-  });
+  const employees = useMemo(() => {
+    return (usersData?.content ?? []).filter(user => user.role === UserRole.EMPLOYEE);
+  }, [usersData]);
 
   const statusData = useMemo(() => {
     const counts = {
@@ -92,11 +107,15 @@ const Reports = () => {
 
     const employeeProjects = employees.map((employee) => {
       const assignedProjects = projects.filter(
-        (project) => project.assignedTo?.id === employee.id
+        (project) => project.assignedToId === employee.id
       );
 
+      const employeeName = (employee.firstName || employee.lastName)
+        ? `${employee.firstName ?? ''} ${employee.lastName ?? ''}`.trim()
+        : employee.username;
+
       return {
-        name: employee.name.split(" ")[0],
+        name: employeeName.split(" ")[0],
         total: assignedProjects.length,
         inProgress: assignedProjects.filter(
           (p) => p.status === ProjectStatus.IN_PROGRESS
@@ -114,73 +133,122 @@ const Reports = () => {
   }, [employees, projects]);
 
   const monthlyData = useMemo(() => {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-    const completionData = [
-      { month: "Jan", completed: 5, started: 8 },
-      { month: "Feb", completed: 7, started: 9 },
-      { month: "Mar", completed: 4, started: 6 },
-      { month: "Apr", completed: 8, started: 12 },
-      { month: "May", completed: 6, started: 7 },
-      { month: "Jun", completed: 3, started: 5 },
-    ];
-    
-    return completionData;
-  }, []);
+    const monthlyStats: { [key: string]: { month: string; completed: number; started: number } } = {};
+    (projects ?? []).forEach(project => {
+      const startDate = parseISO(project.startDate);
+      const endDate = project.endDate ? parseISO(project.endDate) : null;
+      const startMonthStr = format(startDate, "yyyy-MMM");
+      const endMonthStr = project.status === ProjectStatus.COMPLETED && endDate ? format(endDate, "yyyy-MMM") : null;
+
+      if (!monthlyStats[startMonthStr]) {
+        monthlyStats[startMonthStr] = { month: format(startDate, "MMM"), completed: 0, started: 0 };
+      }
+      monthlyStats[startMonthStr].started++;
+
+      if (endMonthStr && project.status === ProjectStatus.COMPLETED && endDate) {
+        if (!monthlyStats[endMonthStr]) {
+          monthlyStats[endMonthStr] = { month: format(endDate, "MMM"), completed: 0, started: 0 };
+        }
+        monthlyStats[endMonthStr].completed++;
+      }
+    });
+
+    const last6Months: { month: string; completed: number; started: number }[] = [];
+    let dateCursor = new Date();
+    for (let i = 0; i < 6; i++) {
+        const monthStr = format(dateCursor, "yyyy-MMM");
+        const monthLabel = format(dateCursor, "MMM");
+        if (monthlyStats[monthStr]) {
+            last6Months.push({ ...monthlyStats[monthStr], month: monthLabel });
+        } else {
+            last6Months.push({ month: monthLabel, completed: 0, started: 0 });
+        }
+        dateCursor.setMonth(dateCursor.getMonth() - 1);
+    }
+
+    return last6Months.reverse();
+  }, [projects]);
 
   const weeklyCompletionRate = useMemo(() => {
-    const getWeekNumber = (d: Date) => {
-      d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-      d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-      return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-    };
-    
-    const weeks = [];
-    const currentDate = new Date();
-    for (let i = 9; i >= 0; i--) {
-      const weekDate = new Date();
-      weekDate.setDate(currentDate.getDate() - i * 7);
-      const weekNumber = getWeekNumber(weekDate);
-      const weekLabel = `W${weekNumber}`;
-      
-      const completionRate = Math.floor(Math.random() * 30) + 70;
-      
-      weeks.push({
-        week: weekLabel,
-        completionRate,
-      });
+    const weeklyStats: { [key: number]: { completed: number; totalEnded: number } } = {};
+    const now = new Date();
+    const tenWeeksAgo = startOfWeek(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7 * 9), { weekStartsOn: 1 });
+
+    (projects ?? []).forEach(project => {
+        if (!project.endDate) return;
+
+        const endDate = parseISO(project.endDate);
+        if (isNaN(endDate.getTime())) return;
+
+        if (endDate < tenWeeksAgo || endDate > now) return;
+
+        const weekNumber = getWeek(endDate, { weekStartsOn: 1 });
+
+        if (!weeklyStats[weekNumber]) {
+            weeklyStats[weekNumber] = { completed: 0, totalEnded: 0 };
+        }
+
+        weeklyStats[weekNumber].totalEnded++;
+        if (project.status === ProjectStatus.COMPLETED) {
+            weeklyStats[weekNumber].completed++;
+        }
+    });
+
+    const rateData: { week: string; completionRate: number }[] = [];
+    let weekCursor = tenWeeksAgo;
+
+    for (let i = 0; i < 10; i++) {
+        const weekNumber = getWeek(weekCursor, { weekStartsOn: 1 });
+        const weekLabel = `W${weekNumber}`;
+        const stats = weeklyStats[weekNumber];
+        const completionRate = stats && stats.totalEnded > 0 ? Math.round((stats.completed / stats.totalEnded) * 100) : 0;
+
+        rateData.push({
+            week: weekLabel,
+            completionRate: completionRate,
+        });
+
+        weekCursor = new Date(weekCursor.getFullYear(), weekCursor.getMonth(), weekCursor.getDate() + 7);
+        if (isNaN(weekCursor.getTime())) break;
     }
-    
-    return weeks;
-  }, []);
 
-  const getTotalProjectCount = () => projects.length;
-  
-  const getCompletedProjectCount = () =>
-    projects.filter((p) => p.status === ProjectStatus.COMPLETED).length;
-  
-  const getCompletionPercentage = () => {
-    const total = getTotalProjectCount();
-    const completed = getCompletedProjectCount();
-    return total ? Math.round((completed / total) * 100) : 0;
-  };
+    return rateData;
+  }, [projects]);
 
-  const getUpcomingDeadlines = () => {
+  const upcomingDeadlines = useMemo(() => {
     const now = new Date();
     const nextWeek = new Date();
     nextWeek.setDate(now.getDate() + 7);
-
-    return projects
+    return (projects ?? [])
       .filter(
-        (p) =>
-          p.status !== ProjectStatus.COMPLETED &&
-          new Date(p.endDate) >= now &&
-          new Date(p.endDate) <= nextWeek
+        (p) => {
+            const endDate = p.endDate ? parseISO(p.endDate) : null;
+             return p.status !== ProjectStatus.COMPLETED &&
+             endDate && !isNaN(endDate.getTime()) &&
+             endDate >= now &&
+             endDate <= nextWeek
+        }
       )
-      .sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-  };
+      .sort((a, b) => {
+          const dateA = a.endDate ? parseISO(a.endDate) : new Date(0);
+          const dateB = b.endDate ? parseISO(b.endDate) : new Date(0);
+          if (isNaN(dateA.getTime())) return 1;
+          if (isNaN(dateB.getTime())) return -1;
+          return dateA.getTime() - dateB.getTime()
+      });
+  }, [projects]);
 
-  const upcomingDeadlines = getUpcomingDeadlines();
+  const totalProjectCount = useMemo(() => (projects ?? []).length, [projects]);
+
+  const completedProjectCount = useMemo(() =>
+    (projects ?? []).filter((p) => p.status === ProjectStatus.COMPLETED).length,
+  [projects]);
+
+  const completionPercentage = useMemo(() => {
+    const total = totalProjectCount;
+    const completed = completedProjectCount;
+    return total ? Math.round((completed / total) * 100) : 0;
+  }, [totalProjectCount, completedProjectCount]);
 
   return (
     <div className="space-y-6">
@@ -201,7 +269,7 @@ const Reports = () => {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{getTotalProjectCount()}</div>
+            <div className="text-2xl font-bold">{isLoadingProjects ? '...' : totalProjectCount}</div>
           </CardContent>
         </Card>
         <Card>
@@ -213,9 +281,9 @@ const Reports = () => {
             <PieChartIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{getCompletedProjectCount()}</div>
+            <div className="text-2xl font-bold">{isLoadingProjects ? '...' : completedProjectCount}</div>
             <p className="text-xs text-muted-foreground">
-              {getCompletionPercentage()}% completion rate
+              {isLoadingProjects ? '...' : `${completionPercentage}% completion rate`}
             </p>
           </CardContent>
         </Card>
@@ -225,10 +293,10 @@ const Reports = () => {
               <CardTitle className="text-base">Active Employees</CardTitle>
               <CardDescription>Team members</CardDescription>
             </div>
-            <BarChartIcon className="h-4 w-4 text-muted-foreground" />
+            <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{employees.length}</div>
+            <div className="text-2xl font-bold">{isLoadingEmployees ? '...' : employees.length}</div>
           </CardContent>
         </Card>
         <Card>
@@ -240,7 +308,7 @@ const Reports = () => {
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{upcomingDeadlines.length}</div>
+            <div className="text-2xl font-bold">{isLoadingProjects ? '...' : upcomingDeadlines.length}</div>
           </CardContent>
         </Card>
       </div>
@@ -250,6 +318,7 @@ const Reports = () => {
           <TabsTrigger value="projectStatus">Project Status</TabsTrigger>
           <TabsTrigger value="teamWorkload">Team Workload</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="projectDetails">Project Details</TabsTrigger>
         </TabsList>
 
         <TabsContent value="projectStatus" className="space-y-6">
@@ -348,15 +417,7 @@ const Reports = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {project.assignedTo ? (
-                          <span className="text-sm">
-                            {project.assignedTo.name.split(" ")[0]}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">
-                            Unassigned
-                          </span>
-                        )}
+                        {project.assignedToId && employees.find(e => e.id === project.assignedToId)?.username}
                       </div>
                     </div>
                   ))}
@@ -485,6 +546,62 @@ const Reports = () => {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="projectDetails">
+          <Card>
+            <CardHeader>
+              <CardTitle>Project Details</CardTitle>
+              <CardDescription>Overview of all projects.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <thead className="bg-muted/50">
+                  <TableRow>
+                    <TableCell className="font-medium">Name</TableCell>
+                    <TableCell>Priority</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Assigned To</TableCell>
+                    <TableCell>Start Date</TableCell>
+                    <TableCell>End Date</TableCell>
+                  </TableRow>
+                </thead>
+                <TableBody>
+                  {isLoadingProjects ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center">
+                        Loading projects...
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    projects.map((project) => (
+                      <TableRow key={project.id}>
+                        <TableCell className="font-medium">{project.name}</TableCell>
+                        <TableCell>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium 
+                            ${project.priority === PriorityLevel.LOW ? 'bg-green-100 text-green-800' :
+                              project.priority === PriorityLevel.MEDIUM ? 'bg-yellow-100 text-yellow-800' :
+                              project.priority === PriorityLevel.HIGH ? 'bg-orange-100 text-orange-800' :
+                              'bg-red-100 text-red-800'}`
+                            }>
+                            {project.priority}
+                          </span>
+                        </TableCell>
+                        <TableCell>{project.status.replace('_', ' ')}</TableCell>
+                        <TableCell>
+                          {project.assignedToId
+                            ? employees.find(e => e.id === project.assignedToId)?.username ?? 'Unknown User'
+                            : 'Unassigned'}
+                        </TableCell>
+                        <TableCell>{format(parseISO(project.startDate), "PP")}</TableCell>
+                        <TableCell>{project.endDate ? format(parseISO(project.endDate), "PP") : '-'}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
